@@ -57,6 +57,7 @@ import com.example.ui.components.AddGamePickerModal
 import com.example.ui.components.CyberBadge
 import com.example.ui.components.GameGridItemCard
 import com.example.ui.components.HeroFeaturedGameCard
+import com.example.ui.components.NoGamesInstalledCard
 import com.example.ui.components.QuickBoosterButton
 import com.example.ui.components.TelemetryOverviewGrid
 import com.example.ui.theme.BeastRed
@@ -227,13 +228,19 @@ fun GamesScreen(
             }
         }
 
-        // Hero Featured Game
+        // Hero Featured Game or No Games Installed Card
         if (featuredGame != null) {
             item {
                 HeroFeaturedGameCard(
                     game = featuredGame,
                     onLaunch = { onLaunchGame(featuredGame) },
                     onToggleFavorite = { onToggleFavorite(featuredGame) }
+                )
+            }
+        } else {
+            item {
+                NoGamesInstalledCard(
+                    onAddAppClick = { showAddPicker = true }
                 )
             }
         }
@@ -330,30 +337,51 @@ fun GamesScreen(
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(vertical = 32.dp),
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(CyberSurfaceCard)
+                        .border(1.dp, CyberBorder, RoundedCornerShape(14.dp))
+                        .padding(vertical = 32.dp, horizontal = 20.dp),
                     contentAlignment = Alignment.Center
                 ) {
                     Column(
                         horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
                         Icon(
                             imageVector = Icons.Default.SportsEsports,
                             contentDescription = null,
-                            tint = TextMuted,
-                            modifier = Modifier.size(48.dp)
+                            tint = CyberCyan.copy(alpha = 0.6f),
+                            modifier = Modifier.size(44.dp)
                         )
                         Text(
-                            text = "No games found in this category",
-                            color = TextSecondary,
-                            fontSize = 14.sp
+                            text = if (games.isEmpty()) "No games installed on this device" else "No games found in '$selectedFilter'",
+                            color = TextPrimary,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 14.sp,
+                            textAlign = androidx.compose.ui.text.style.TextAlign.Center
                         )
+                        Text(
+                            text = if (games.isEmpty())
+                                "Download games from Google Play Store or tap 'Add Game' to select any installed app to launch with JairoPlayer."
+                            else
+                                "Try selecting 'All' or search for a different game title.",
+                            color = TextMuted,
+                            fontSize = 12.sp,
+                            textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
                         Button(
-                            onClick = { showAddPicker = true },
+                            onClick = {
+                                if (games.isEmpty()) showAddPicker = true else selectedFilter = "All"
+                            },
                             colors = ButtonDefaults.buttonColors(containerColor = CyberCyan, contentColor = Color.Black),
                             shape = RoundedCornerShape(10.dp)
                         ) {
-                            Text("Scan Device Games", fontWeight = FontWeight.Bold)
+                            Text(
+                                text = if (games.isEmpty()) "Add Installed App" else "Show All Games",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 12.sp
+                            )
                         }
                     }
                 }

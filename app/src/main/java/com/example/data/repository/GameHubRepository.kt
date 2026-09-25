@@ -66,12 +66,63 @@ class GameHubRepository(
 
     init {
         coroutineScope.launch {
-            seedInitialGameProfilesIfNeeded()
+            cleanupUninstalledProfiles()
             refreshGamesList()
         }
     }
 
+    private suspend fun cleanupUninstalledProfiles() = withContext(Dispatchers.IO) {
+        try {
+            val allProfiles = gameDao.getAllProfiles().first()
+            for (profile in allProfiles) {
+                if (!isPackageInstalled(profile.packageName) || isNonGamePackage(profile.packageName, profile.title)) {
+                    gameDao.deleteProfile(profile.packageName)
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    fun isNonGamePackage(packageName: String, label: String = ""): Boolean {
+        val lowerPkg = packageName.lowercase()
+        val lowerLabel = label.lowercase()
+        val nonGameTokens = listOf(
+            "chrome", "browser", "firefox", "opera", "edge", "safari", "chromium",
+            "vending", "googlequicksearchbox", "gms", "settings", "setupwizard",
+            "deskclock", "calculator", "camera", "gallery", "contacts", "dialer",
+            "telephony", "messaging", "mms", "email", "gmail", "youtube", "music",
+            "photos", "calendar", "notes", "keep", "maps", "drive", "docs", "sheets",
+            "slides", "weather", "keyboard", "inputmethod", "launcher", "systemui",
+            "webview", "bluetooth", "packageinstaller", "documentsui", "terminal",
+            "carrier", "providers", "feedback", "soundpicker", "printspooler",
+            "android.stk", "companiondevice", "calllogbackup", "backuprestore"
+        )
+        for (token in nonGameTokens) {
+            if (lowerPkg.contains(token) || lowerLabel.contains(token)) {
+                return true
+            }
+        }
+        return false
+    }
+
+    private fun isPackageInstalled(packageName: String): Boolean {
+        return try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                packageManager.getPackageInfo(packageName, PackageManager.PackageInfoFlags.of(0))
+            } else {
+                @Suppress("DEPRECATION")
+                packageManager.getPackageInfo(packageName, 0)
+            }
+            true
+        } catch (e: Exception) {
+            false
+        }
+    }
+
     suspend fun refreshGamesList() = withContext(Dispatchers.IO) {
+        cleanupUninstalledProfiles()
+
         val dbProfiles = gameDao.getAllProfiles().first()
         val profileMap = dbProfiles.associateBy { it.packageName }
 
@@ -95,6 +146,10 @@ class GameHubRepository(
             for (info in resolveInfos) {
                 val pkgName = info.activityInfo.packageName
                 if (pkgName == context.packageName) continue // Skip self
+                val label = info.loadLabel(packageManager).toString()
+
+                // STRICT FILTER: If it is Chrome, a browser, or any system/utility package, SKIP IT!
+                if (isNonGamePackage(pkgName, label)) continue
 
                 val appInfo = info.activityInfo.applicationInfo
                 val isGameCategory = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -105,28 +160,29 @@ class GameHubRepository(
                 val isGameFlag = (appInfo.flags and ApplicationInfo.FLAG_IS_GAME) != 0
                 val knownInDb = profileMap.containsKey(pkgName)
 
-                // If categorized as game, or user added to DB, or matches common gaming tokens
-                val label = info.loadLabel(packageManager).toString()
-                val isProbableGame = isGameCategory || isGameFlag || knownInDb ||
+                // Only consider if genuinely categorized as a game or gaming keyword match
+                val isProbableGame = isGameCategory || isGameFlag || (knownInDb && !isNonGamePackage(pkgName, label)) ||
                         isGamingKeyword(label, pkgName)
 
                 if (isProbableGame) {
                     val profile = profileMap[pkgName] ?: GameProfileEntity(
                         packageName = pkgName,
                         title = label,
-                        category = "Mobile Game"
+                        category = if (isGameCategory || isGameFlag) "Native Game" else "Installed Game"
                     )
+
+                    val appIcon = info.loadIcon(packageManager)
 
                     realInstalledPackages.add(
                         GameAppItem(
                             packageName = pkgName,
                             title = label,
-                            icon = info.loadIcon(packageManager),
+                            icon = appIcon,
                             isInstalled = true,
                             profile = profile,
-                            developer = "Installed App",
+                            developer = "Installed on Device",
                             genre = if (isGameCategory) "Native Game" else "Installed Game",
-                            installSize = "Optimized",
+                            installSize = "Installed",
                             estimatedFps = 60,
                             isFavorite = profile.isFavorite,
                             lastPlayedAgo = formatTimestampAgo(profile.lastPlayedTimestamp),
@@ -139,27 +195,7 @@ class GameHubRepository(
             e.printStackTrace()
         }
 
-        // 2. Add pre-populated popular games that are in DB (or mock presets)
-        val defaultPresets = getPopularPresets()
-        for (preset in defaultPresets) {
-            val exists = realInstalledPackages.any { it.packageName == preset.packageName }
-            if (!exists) {
-                val profile = profileMap[preset.packageName] ?: GameProfileEntity(
-                    packageName = preset.packageName,
-                    title = preset.title,
-                    category = preset.genre
-                )
-                realInstalledPackages.add(
-                    preset.copy(
-                        profile = profile,
-                        isFavorite = profile.isFavorite,
-                        lastPlayedAgo = formatTimestampAgo(profile.lastPlayedTimestamp),
-                        totalTimeFormatted = formatDuration(profile.totalPlayTimeMillis)
-                    )
-                )
-            }
-        }
-
+        // Only show genuinely installed games on the user's phone!
         _installedGames.value = realInstalledPackages.sortedWith(
             compareByDescending<GameAppItem> { it.isFavorite }
                 .thenByDescending { it.profile.totalPlayTimeMillis }
@@ -168,14 +204,20 @@ class GameHubRepository(
     }
 
     private fun isGamingKeyword(label: String, pkg: String): Boolean {
+        if (isNonGamePackage(pkg, label)) return false
         val lowered = "$label $pkg".lowercase()
-        return lowered.contains("game") || lowered.contains("play") ||
+        return lowered.contains("game") ||
                 lowered.contains("craft") || lowered.contains("racing") ||
                 lowered.contains("rpg") || lowered.contains("fps") ||
                 lowered.contains("combat") || lowered.contains("arena") ||
                 lowered.contains("genshin") || lowered.contains("pubg") ||
                 lowered.contains("freefire") || lowered.contains("cod") ||
-                lowered.contains("mobile") || lowered.contains("legends")
+                lowered.contains("shooter") || lowered.contains("legends") ||
+                lowered.contains("subway") || lowered.contains("clash") ||
+                lowered.contains("candy") || lowered.contains("roblox") ||
+                lowered.contains("minecraft") || lowered.contains("ludo") ||
+                lowered.contains("chess") || lowered.contains("arcade") ||
+                lowered.contains("simulator") || lowered.contains("puzzle")
     }
 
     suspend fun queryAllDeviceApps(): List<GameAppItem> = withContext(Dispatchers.IO) {
@@ -369,117 +411,6 @@ class GameHubRepository(
                 )
             )
         }
-    }
-
-    private suspend fun seedInitialGameProfilesIfNeeded() = withContext(Dispatchers.IO) {
-        val existing = gameDao.getAllProfiles().first()
-        if (existing.isEmpty()) {
-            val presets = getPopularPresets().map { it.profile }
-            gameDao.insertProfilesIfNotExists(presets)
-        }
-    }
-
-    private fun getPopularPresets(): List<GameAppItem> {
-        return listOf(
-            GameAppItem(
-                packageName = "com.miHoYo.GenshinImpact",
-                title = "Genshin Impact",
-                isInstalled = false,
-                profile = GameProfileEntity(
-                    packageName = "com.miHoYo.GenshinImpact",
-                    title = "Genshin Impact",
-                    isFavorite = true,
-                    category = "Open World RPG",
-                    performanceMode = "BEAST_TURBO",
-                    customTargetFps = 90
-                ),
-                developer = "HoYoverse",
-                genre = "Action RPG",
-                installSize = "24.6 GB",
-                estimatedFps = 60,
-                isFavorite = true
-            ),
-            GameAppItem(
-                packageName = "com.tencent.ig",
-                title = "PUBG Mobile",
-                isInstalled = false,
-                profile = GameProfileEntity(
-                    packageName = "com.tencent.ig",
-                    title = "PUBG Mobile",
-                    isFavorite = true,
-                    category = "Battle Royale",
-                    performanceMode = "BEAST_TURBO",
-                    customTargetFps = 120
-                ),
-                developer = "Krafton / Tencent",
-                genre = "Battle Royale FPS",
-                installSize = "4.2 GB",
-                estimatedFps = 120,
-                isFavorite = true
-            ),
-            GameAppItem(
-                packageName = "com.activision.callofduty.shooter",
-                title = "Call of Duty: Mobile",
-                isInstalled = false,
-                profile = GameProfileEntity(
-                    packageName = "com.activision.callofduty.shooter",
-                    title = "Call of Duty: Mobile",
-                    isFavorite = false,
-                    category = "Tactical FPS",
-                    performanceMode = "BEAST_TURBO",
-                    customTargetFps = 120
-                ),
-                developer = "Activision Publishing",
-                genre = "Action / Shooter",
-                installSize = "5.8 GB",
-                estimatedFps = 120
-            ),
-            GameAppItem(
-                packageName = "com.dts.freefireth",
-                title = "Free Fire MAX",
-                isInstalled = false,
-                profile = GameProfileEntity(
-                    packageName = "com.dts.freefireth",
-                    title = "Free Fire MAX",
-                    isFavorite = false,
-                    category = "Survival Shooter"
-                ),
-                developer = "Garena International",
-                genre = "Battle Royale",
-                installSize = "2.1 GB",
-                estimatedFps = 90
-            ),
-            GameAppItem(
-                packageName = "com.gameloft.android.ANMP.GloftA9HM",
-                title = "Asphalt 9: Legends",
-                isInstalled = false,
-                profile = GameProfileEntity(
-                    packageName = "com.gameloft.android.ANMP.GloftA9HM",
-                    title = "Asphalt 9: Legends",
-                    isFavorite = false,
-                    category = "Arcade Racing"
-                ),
-                developer = "Gameloft",
-                genre = "Arcade Racing",
-                installSize = "3.4 GB",
-                estimatedFps = 60
-            ),
-            GameAppItem(
-                packageName = "com.mobile.legends",
-                title = "Mobile Legends: Bang Bang",
-                isInstalled = false,
-                profile = GameProfileEntity(
-                    packageName = "com.mobile.legends",
-                    title = "Mobile Legends: Bang Bang",
-                    isFavorite = false,
-                    category = "MOBA"
-                ),
-                developer = "Moonton",
-                genre = "5v5 MOBA",
-                installSize = "3.9 GB",
-                estimatedFps = 120
-            )
-        )
     }
 
     private fun getPrepopulatedNews(): List<NewsArticle> {

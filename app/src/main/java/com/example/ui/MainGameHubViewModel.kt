@@ -1,17 +1,22 @@
 package com.example.ui
 
 import android.app.Application
+import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.data.db.AppDatabase
 import com.example.data.db.BookmarkedNewsEntity
 import com.example.data.db.GameSessionEntity
 import com.example.data.model.ActiveSessionState
+import com.example.data.model.AppGameSettings
 import com.example.data.model.CustomProSettings
 import com.example.data.model.GameAppItem
 import com.example.data.model.HardwareTelemetry
 import com.example.data.model.NewsArticle
 import com.example.data.model.PerformanceModeType
+import com.example.data.model.RecordedClipItem
+import com.example.data.model.RecordingStatusState
+import com.example.data.recorder.GameRecorderManager
 import com.example.data.repository.GameHubRepository
 import com.example.data.telemetry.BoostResult
 import com.example.data.telemetry.HardwareTelemetryManager
@@ -27,17 +32,31 @@ enum class GameHubTab(val label: String) {
     BOOSTER("Booster"),
     TOOLS("Tools"),
     NEWS("News"),
-    STATS("Stats")
+    STATS("Stats"),
+    SETTINGS("Settings")
 }
 
 class MainGameHubViewModel(application: Application) : AndroidViewModel(application) {
     private val database = AppDatabase.getDatabase(application)
     private val repository = GameHubRepository(application, database, viewModelScope)
     private val telemetryManager = HardwareTelemetryManager(application, viewModelScope)
+    private val recorderManager = GameRecorderManager(application, viewModelScope)
 
     // Current navigation tab
     private val _currentTab = MutableStateFlow(GameHubTab.GAMES)
     val currentTab: StateFlow<GameHubTab> = _currentTab.asStateFlow()
+
+    // Application Settings (Video resolution 1080p/720p/480p, floating window, etc.)
+    private val _settings = MutableStateFlow(AppGameSettings())
+    val settings: StateFlow<AppGameSettings> = _settings.asStateFlow()
+
+    // Floating window active status
+    private val _isFloatingOverlayActive = MutableStateFlow(false)
+    val isFloatingOverlayActive: StateFlow<Boolean> = _isFloatingOverlayActive.asStateFlow()
+
+    // Screen recording state & gallery clips
+    val recordingState: StateFlow<RecordingStatusState> = recorderManager.recordingState
+    val recordedClips: StateFlow<List<RecordedClipItem>> = recorderManager.recordedClips
 
     // Boosting status
     private val _isBoosting = MutableStateFlow(false)
@@ -72,6 +91,39 @@ class MainGameHubViewModel(application: Application) : AndroidViewModel(applicat
         _currentTab.value = tab
     }
 
+    fun updateSettings(newSettings: AppGameSettings) {
+        _settings.value = newSettings
+    }
+
+    fun toggleFloatingOverlay(show: Boolean? = null) {
+        _isFloatingOverlayActive.value = show ?: !_isFloatingOverlayActive.value
+        telemetryManager.triggerVibration("light")
+    }
+
+    fun startRecording(gameTitle: String = "Game") {
+        recorderManager.startRecording(gameTitle, _settings.value)
+        telemetryManager.triggerVibration("light")
+    }
+
+    fun stopRecording(onComplete: (Uri?, String) -> Unit = { _, _ -> }) {
+        recorderManager.stopRecording { uri, fileName ->
+            telemetryManager.triggerVibration("boost")
+            onComplete(uri, fileName)
+        }
+    }
+
+    fun captureScreenshot(gameTitle: String = "Game", onComplete: (Uri?, String) -> Unit = { _, _ -> }) {
+        viewModelScope.launch {
+            val result = recorderManager.captureScreenshot(gameTitle)
+            telemetryManager.triggerVibration("light")
+            onComplete(result.first, result.second)
+        }
+    }
+
+    fun deleteRecordedClip(clip: RecordedClipItem) {
+        recorderManager.deleteClip(clip)
+    }
+
     fun triggerQuickBoost() {
         if (_isBoosting.value) return
         viewModelScope.launch {
@@ -84,6 +136,12 @@ class MainGameHubViewModel(application: Application) : AndroidViewModel(applicat
 
     fun launchGame(game: GameAppItem) {
         val currentTel = telemetry.value
+        if (_settings.value.autoBoostOnLaunch) {
+            triggerQuickBoost()
+        }
+        if (_settings.value.showFloatingWindowOnLaunch) {
+            _isFloatingOverlayActive.value = true
+        }
         repository.launchGameSession(
             game = game,
             currentBatteryPct = currentTel.batteryPercent,
@@ -93,6 +151,9 @@ class MainGameHubViewModel(application: Application) : AndroidViewModel(applicat
     }
 
     fun endActiveSession() {
+        if (recordingState.value.isRecording) {
+            stopRecording()
+        }
         viewModelScope.launch {
             repository.endActiveGameSession(telemetry.value.batteryPercent)
         }
@@ -111,6 +172,13 @@ class MainGameHubViewModel(application: Application) : AndroidViewModel(applicat
 
     fun updateCustomProSettings(settings: CustomProSettings) {
         repository.updateCustomProSettings(settings)
+    }
+
+    fun refreshGames() {
+        viewModelScope.launch {
+            repository.refreshGamesList()
+            loadAllDeviceApps()
+        }
     }
 
     fun addAppToHub(app: GameAppItem) {

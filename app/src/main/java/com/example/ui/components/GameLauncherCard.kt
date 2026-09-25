@@ -85,101 +85,116 @@ fun HeroFeaturedGameCard(
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(210.dp)
-        ) {
-            // Background Artwork
-            Image(
-                painter = painterResource(id = R.drawable.img_game_hero),
-                contentDescription = game.title,
-                contentScale = ContentScale.Crop,
-                modifier = Modifier.fillMaxSize()
-            )
-
-            // Cyber Gradient Overlay
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(
-                        Brush.verticalGradient(
-                            colors = listOf(
-                                Color.Transparent,
-                                Color(0x99080B11),
-                                Color(0xF2080B11)
-                            )
+                .background(
+                    Brush.verticalGradient(
+                        colors = listOf(
+                            Color(0xFF0F172A),
+                            Color(0xFF0A0F1D),
+                            Color(0xFF080B11)
                         )
                     )
-            )
-
-            // Top Badges
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(14.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                CyberBadge(
-                    text = "FEATURED TITLE",
-                    color = CyberCyan
                 )
-
-                IconButton(
-                    onClick = onToggleFavorite,
-                    modifier = Modifier
-                        .size(36.dp)
-                        .clip(CircleShape)
-                        .background(Color(0x80000000))
-                ) {
-                    Icon(
-                        imageVector = if (game.isFavorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
-                        contentDescription = "Favorite",
-                        tint = if (game.isFavorite) BeastRed else Color.White,
-                        modifier = Modifier.size(20.dp)
-                    )
-                }
-            }
-
-            // Bottom Info & Launch Button
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .align(Alignment.BottomStart)
-                    .padding(16.dp)
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Text(
-                        text = game.title,
-                        color = TextPrimary,
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Black,
-                        fontSize = 20.sp
-                    )
-                    CyberBadge(
-                        text = "${game.estimatedFps} FPS",
-                        color = NeonGreen
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(4.dp))
-
+                .padding(14.dp)
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                // Top Badges
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Column {
-                        Text(
-                            text = "${game.developer} • ${game.genre}",
-                            color = TextSecondary,
-                            fontSize = 12.sp
+                    CyberBadge(
+                        text = "FEATURED GAME",
+                        color = CyberCyan
+                    )
+
+                    IconButton(
+                        onClick = onToggleFavorite,
+                        modifier = Modifier
+                            .size(36.dp)
+                            .clip(CircleShape)
+                            .background(Color(0x80000000))
+                    ) {
+                        Icon(
+                            imageVector = if (game.isFavorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+                            contentDescription = "Favorite",
+                            tint = if (game.isFavorite) BeastRed else Color.White,
+                            modifier = Modifier.size(20.dp)
                         )
+                    }
+                }
+
+                // Game Info Row
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    // Real Game Logo
+                    Box(
+                        modifier = Modifier
+                            .size(54.dp)
+                            .clip(RoundedCornerShape(14.dp))
+                            .background(CyberSurfaceVariant)
+                            .border(1.5.dp, CyberCyan, RoundedCornerShape(14.dp)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        if (game.icon != null) {
+                            val bitmap = remember(game.icon) {
+                                try {
+                                    game.icon.toBitmap(128, 128, android.graphics.Bitmap.Config.ARGB_8888).asImageBitmap()
+                                } catch (e: Exception) {
+                                    null
+                                }
+                            }
+                            if (bitmap != null) {
+                                Image(
+                                    bitmap = bitmap,
+                                    contentDescription = game.title,
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentScale = ContentScale.Crop
+                                )
+                            } else {
+                                Icon(
+                                    imageVector = Icons.Default.SportsEsports,
+                                    contentDescription = game.title,
+                                    tint = CyberCyan,
+                                    modifier = Modifier.size(28.dp)
+                                )
+                            }
+                        } else {
+                            Icon(
+                                imageVector = Icons.Default.SportsEsports,
+                                contentDescription = game.title,
+                                tint = CyberCyan,
+                                modifier = Modifier.size(28.dp)
+                            )
+                        }
+                    }
+
+                    Column(modifier = Modifier.weight(1f)) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Text(
+                                text = game.title,
+                                color = TextPrimary,
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Black,
+                                fontSize = 16.sp,
+                                maxLines = 1
+                            )
+                            CyberBadge(
+                                text = "${game.estimatedFps} FPS",
+                                color = NeonGreen
+                            )
+                        }
                         Text(
-                            text = "Playtime: ${game.totalTimeFormatted} • Last: ${game.lastPlayedAgo}",
-                            color = TextMuted,
-                            fontSize = 11.sp
+                            text = "${game.developer} • Playtime: ${game.totalTimeFormatted}",
+                            color = TextSecondary,
+                            fontSize = 11.sp,
+                            maxLines = 1
                         )
                     }
 
@@ -189,26 +204,96 @@ fun HeroFeaturedGameCard(
                             containerColor = CyberCyan,
                             contentColor = Color.Black
                         ),
-                        shape = RoundedCornerShape(12.dp),
+                        shape = RoundedCornerShape(10.dp),
                         modifier = Modifier
-                            .height(42.dp)
+                            .height(40.dp)
                             .testTag("hero_launch_button")
                     ) {
                         Icon(
                             imageVector = Icons.Default.PlayArrow,
                             contentDescription = "Launch",
                             tint = Color.Black,
-                            modifier = Modifier.size(20.dp)
+                            modifier = Modifier.size(18.dp)
                         )
-                        Spacer(modifier = Modifier.width(4.dp))
+                        Spacer(modifier = Modifier.width(3.dp))
                         Text(
                             text = "LAUNCH",
                             fontWeight = FontWeight.Black,
-                            fontSize = 13.sp,
+                            fontSize = 12.sp,
                             letterSpacing = 0.5.sp
                         )
                     }
                 }
+            }
+        }
+    }
+}
+
+@Composable
+fun NoGamesInstalledCard(
+    onAddAppClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    CyberCard(
+        modifier = modifier
+            .fillMaxWidth()
+            .testTag("no_games_hero_card"),
+        borderColor = CyberBorder,
+        cornerRadius = 18.dp
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(20.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(56.dp)
+                    .clip(CircleShape)
+                    .background(CyberSurfaceVariant)
+                    .border(1.dp, CyberCyan.copy(alpha = 0.5f), CircleShape),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Default.SportsEsports,
+                    contentDescription = null,
+                    tint = CyberCyan,
+                    modifier = Modifier.size(30.dp)
+                )
+            }
+
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(
+                    text = "NO GAMES INSTALLED ON PHONE",
+                    fontWeight = FontWeight.Black,
+                    fontSize = 15.sp,
+                    color = TextPrimary,
+                    letterSpacing = 0.5.sp
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = "Download games from Google Play Store. When downloaded, they will automatically appear here with their official game logo and live FPS optimization.",
+                    color = TextSecondary,
+                    fontSize = 12.sp,
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                    lineHeight = 17.sp
+                )
+            }
+
+            Button(
+                onClick = onAddAppClick,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = CyberCyan,
+                    contentColor = Color.Black
+                ),
+                shape = RoundedCornerShape(10.dp),
+                modifier = Modifier.testTag("add_installed_app_hero_button")
+            ) {
+                Icon(imageVector = Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                Spacer(modifier = Modifier.width(4.dp))
+                Text("ADD ANY INSTALLED APP", fontWeight = FontWeight.Black, fontSize = 11.sp)
             }
         }
     }
@@ -318,7 +403,7 @@ fun GameGridItemCard(
                         color = if (game.estimatedFps >= 90) CyberCyan else NeonGreen
                     )
                     Text(
-                        text = if (game.isInstalled) "INSTALLED" else "PRESET PROFILE",
+                        text = "INSTALLED GAME",
                         color = TextMuted,
                         fontSize = 9.sp,
                         fontWeight = FontWeight.SemiBold
