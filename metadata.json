@@ -1,0 +1,6 @@
+{
+  "name": "JairoPlayer",
+  "description": "High-performance Game Launcher & Game Hub with game booster modes, real-time FPS and hardware telemetry, session analytics, and gaming news.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
